@@ -158,10 +158,10 @@
         <!-- Tier select -->
         <label>Troop tier</label>
         <select id="troopTier">
-          <option value="T6" selected>T6</option>
+          <option value="T6">T6</option>
           <option value="T9">T9</option>
           <option value="T10">T10</option>
-          <option value="T10.TG1">T10.TG1</option>
+          <option value="T10.TG1" selected>T10.TG1</option>
           <option value="T10.TG2">T10.TG2</option>
           <option value="T10.TG3">T10.TG3</option>
           <option value="T10.TG4">T10.TG4</option>
@@ -170,54 +170,50 @@
 
         <!-- Stats -->
         <div class="grid" style="margin-top:8px">
-
           <div>
             <h3>Infantry</h3>
             <label>Attack (%)</label>
-            <input id="inf_atk" type="number" step="0.1" value="0">
+            <input id="inf_atk" type="number" step="0.1" value="481.6">
             <label>Lethality (%)</label>
-            <input id="inf_let" type="number" step="0.1" value="0">
+            <input id="inf_let" type="number" step="0.1" value="284.4">
           </div>
 
           <div>
             <h3>Cavalry</h3>
             <label>Attack (%)</label>
-            <input id="cav_atk" type="number" step="0.1" value="0">
+            <input id="cav_atk" type="number" step="0.1" value="493.1">
             <label>Lethality (%)</label>
-            <input id="cav_let" type="number" step="0.1" value="0">
+            <input id="cav_let" type="number" step="0.1" value="311.8">
           </div>
 
           <div>
             <h3>Archery</h3>
             <label>Attack (%)</label>
-            <input id="arc_atk" type="number" step="0.1" value="0">
+            <input id="arc_atk" type="number" step="0.1" value="508.8">
             <label>Lethality (%)</label>
-            <input id="arc_let" type="number" step="0.1" value="0">
+            <input id="arc_let" type="number" step="0.1" value="479.7">
           </div>
-
         </div>
 
-        <!-- Troop stocks -->
         <h3>Your available troops</h3>
         <label>Infantry</label>
-        <input id="stockInf" type="number" value="0">
+        <input id="stockInf" type="number" min="0" value="200653">
 
         <label>Cavalry</label>
-        <input id="stockCav" type="number" value="0">
+        <input id="stockCav" type="number" min="0" value="180269">
 
         <label>Archers</label>
-        <input id="stockArc" type="number" value="0">
+        <input id="stockArc" type="number" min="0" value="301619">
 
-        <!-- Formation -->
         <h3>Formation settings</h3>
         <label>Call rally size</label>
-        <input id="rallySize" type="number" value="0">
+        <input id="rallySize" type="number" min="0" value="134850">
 
         <label>Join cap</label>
-        <input id="marchSize" type="number" value="0">
+        <input id="marchSize" type="number" min="0" value="65000">
 
         <label># of marches you have</label>
-        <input id="numFormations" type="number" value="1">
+        <input id="numFormations" type="number" min="1" value="6">
 
         <!-- Manual composition -->
         <label>Manual Call Rally composition (Inf/Cav/Arc)</label>
