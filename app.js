@@ -1,13 +1,14 @@
 /* ============================================================
    #1079 LoL App – Kingshot Bear Optimizer
-   FINAL APP.JS — with:
-   ✔ RESTORED 1:1 Fraction Logic (Exact original math)
-   ✔ MAGIC RATIO V2 (co-optimized call + join + stock-aware)
-   ✔ COMPACT SCOREBOARD
-   ✔ Tier rule Option A (T6 low tier, all others high)
+   FINAL PATCHED APP.JS
+   - Restored 1:1 Ratio (original formula)
+   - Magic Ratio V2
+   - Compact scoreboard
+   - No NaN output ever again
+   - Safe input handling
    ============================================================ */
 
-/* ------------------- Bear Model Constants ------------------- */
+/* ------------------- Constants ------------------- */
 const WINDOWS = 5;
 const BEAR_TROOPS = 5000;
 const BEAR_DEF = 10;
@@ -18,85 +19,154 @@ const BASE_LETHALITY = 10;
 const SKILLMOD_INF = 1.00;
 const SKILLMOD_CAV = 1.00;
 const SKILLMOD_ARC = 1.10;
-const FILL_THRESHOLD = 0.923;
 
-/* ------------------- Bounds for 1:1 Ratio (original app) ------------------- */
 const INF_MIN_PCT = 0.075;
 const INF_MAX_PCT = 0.10;
 const CAV_MIN_PCT = 0.10;
+const FILL_THRESHOLD = 0.923;
 
-/* ------------------- Tier Data ------------------- */
 let TIERS = null;
 
-/* ------------------- Utility Helpers ------------------- */
-const $ = (id) => document.getElementById(id);
-const nval = (id) => {
-  const el = $(id);
-  const v = parseFloat(el?.value || "0");
-  return Number.isFinite(v) ? v : 0;
-};
-const sumTroops = (o) => (o.inf|0)+(o.cav|0)+(o.arc|0);
-const cloneStock = (s) => ({inf:s.inf|0,cav:s.cav|0,arc:s.arc|0});
+/* ------------------- Utilities ------------------- */
+function $(id){ return document.getElementById(id); }
 
-/* ------------------- Triplet Parser ------------------- */
+function nval(id){
+  const el = document.getElementById(id);
+  if (!el) return 0;
+  const v = el.value.trim();
+  if (v === "" || v === null || v === undefined) return 0;
+  const parsed = parseFloat(v);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function sumTroops(o){
+  return (o.inf|0)+(o.cav|0)+(o.arc|0);
+}
+
+function cloneStock(s){
+  return {
+    inf: Math.max(0, s.inf|0),
+    cav: Math.max(0, s.cav|0),
+    arc: Math.max(0, s.arc|0)
+  };
+}
+
+/* ------------------- Triplet parser ------------------- */
 function parseTriplet(str){
   if(!str) return null;
-  const parts=str.replace(/%/g,"").trim().split(/[/,\s]+/).map(Number).filter(x=>Number.isFinite(x));
+  const parts = str.replace(/%/g, "")
+    .trim()
+    .split(/[/,\s]+/)
+    .map(Number)
+    .filter(x => Number.isFinite(x));
+
   if(!parts.length) return null;
-  const i=parts[0]??0, c=parts[1]??0, a=parts[2]??(100-(i+c));
-  const S=i+c+a;
-  if(S<=0) return null;
+
+  let i = parts[0] ?? 0;
+  let c = parts[1] ?? 0;
+  let a = parts[2] ?? (100 - (i + c));
+  const S = i + c + a;
+
+  if (S <= 0) return null;
   return {i:i/S, c:c/S, a:a/S};
 }
+
 function toPctTriplet(fr){
-  const S=fr.i+fr.c+fr.a || 1;
-  const pi=Math.round(fr.i/S*100);
-  const pc=Math.round(fr.c/S*100);
-  const pa=100-pi-pc;
+  const S = fr.i + fr.c + fr.a || 1;
+  const pi = Math.round(fr.i/S*100);
+  const pc = Math.round(fr.c/S*100);
+  const pa = 100 - pi - pc;
   return `${pi}/${pc}/${pa}`;
 }
 
 /* ============================================================
-   SECTION 1 — RESTORED EXACT 1:1 RATIO LOGIC (Your original math)
+   DAMAGE ENGINE (unchanged)
    ============================================================ */
+function perTroopAttack(baseAtk){
+  return baseAtk * (1 + BEAR_ATK_BONUS) * (BASE_LETHALITY/100);
+}
 
-/* Attack factor used by original fraction logic */
-function attackFactor(atk, let_) {
+function computeFormationDamage(pack, tierKey){
+  const t = TIERS?.tiers?.[tierKey];
+  if(!t) return {finalScore:0, byType:{inf:0,cav:0,arc:0}, round10Total:0};
+
+  const nInf = pack.inf|0;
+  const nCav = pack.cav|0;
+  const nArc = pack.arc|0;
+  const total = nInf+nCav+nArc;
+
+  if(total <= 0){
+    return {finalScore:0, byType:{inf:0,cav:0,arc:0}, round10Total:0};
+  }
+
+  const armyMin = Math.min(total, BEAR_TROOPS);
+
+  const atkInf = perTroopAttack(t.inf[0]);
+  const atkCav = perTroopAttack(t.cav[0]);
+  const atkArc = perTroopAttack(t.arc[0]);
+
+  const dInf = Math.sqrt(nInf*armyMin)*(atkInf/BEAR_DEF_PER_TROOP)/100*SKILLMOD_INF;
+  const dCav = Math.sqrt(nCav*armyMin)*(atkCav/BEAR_DEF_PER_TROOP)/100*SKILLMOD_CAV;
+  const dArc = Math.sqrt(nArc*armyMin)*(atkArc/BEAR_DEF_PER_TROOP)/100*SKILLMOD_ARC;
+
+  const total0 = dInf+dCav+dArc;
+  const total10 = total0*10;
+
+  return {
+    byType:{inf:dInf,cav:dCav,arc:dArc},
+    round10Total: total10,
+    finalScore: Math.ceil(total10)
+  };
+}
+
+/* ============================================================
+   RESTORED 1:1 RATIO (Your original optimizer)
+   ============================================================ */
+function attackFactor(atk, let_){
   return (1 + atk/100) * (1 + let_/100);
 }
 
-/* Map tiers to original ArcherCoef rule (Option A):
-   ✔ T6 => low tier => 4.4/1.25
-   ✔ All others => high tier => 2.78/1.45
-*/
+// Option A tier → ArcherCoef
 function originalArcherCoef(tierKey){
-  if (tierKey === "T6") return 4.4/1.25;
-  return 2.78/1.45;
+  if (tierKey === "T6") return (4.4/1.25);
+  return (2.78/1.45);
 }
 
-/* Your original closed‑form optimum */
-function computeExactOptimalFractions(stats, tierKey) {
-  const Ainf = Math.max(1e-6, attackFactor(stats.inf_atk, stats.inf_let));
-  const Acav = Math.max(1e-6, attackFactor(stats.cav_atk, stats.cav_let));
-  const Aarc = Math.max(1e-6, attackFactor(stats.arc_atk, stats.arc_let));
+function computeExactOptimalFractions(stats, tierKey){
+  let Ainf = attackFactor(stats.inf_atk, stats.inf_let);
+  let Acav = attackFactor(stats.cav_atk, stats.cav_let);
+  let Aarc = attackFactor(stats.arc_atk, stats.arc_let);
+
+  // Ensure never zero
+  Ainf = Math.max(Ainf, 1e-6);
+  Acav = Math.max(Acav, 1e-6);
+  Aarc = Math.max(Aarc, 1e-6);
+
   const KARC = originalArcherCoef(tierKey);
 
   const alpha = Ainf / 1.12;
   const beta  = Acav;
   const gamma = KARC * Aarc;
 
-  const a2 = alpha*alpha, b2=beta*beta, g2=gamma*gamma;
+  const a2 = alpha*alpha;
+  const b2 = beta*beta;
+  const g2 = gamma*gamma;
+
   const sum = a2 + b2 + g2;
-  if (sum <= 0 || !isFinite(sum)) {
-      return { fi: 0.08, fc: 0.12, fa: 0.80 }; // sane fallback
+
+  if (!isFinite(sum) || sum <= 0){
+    return {fi:0.08, fc:0.12, fa:0.80};
   }
 
-  return { fi:a2/sum, fc:b2/sum, fa:g2/sum };
+  return {
+    fi: a2/sum,
+    fc: b2/sum,
+    fa: g2/sum
+  };
 }
 
-/* Enforce original infantry/cavalry bounds */
-function enforceOriginalBounds(fr){
-  let i=fr.fi, c=fr.fc, a=fr.fa;
+function enforceBounds(fr){
+  let i = fr.fi, c = fr.fc, a = fr.fa;
 
   if(i < INF_MIN_PCT) i = INF_MIN_PCT;
   if(i > INF_MAX_PCT) i = INF_MAX_PCT;
@@ -117,45 +187,10 @@ function enforceOriginalBounds(fr){
 }
 
 /* ============================================================
-   SECTION 2 — DAMAGE ENGINE (unchanged)
-   ============================================================ */
-function perTroopAttack(baseAtk){
-  return baseAtk*(1+BEAR_ATK_BONUS)*(BASE_LETHALITY/100);
-}
-
-function computeFormationDamage(pack, tierKey){
-  const t = TIERS?.tiers?.[tierKey];
-  if(!t) return {finalScore:0, byType:{inf:0,cav:0,arc:0}, round10Total:0};
-
-  const nInf=pack.inf|0, nCav=pack.cav|0, nArc=pack.arc|0;
-  const total=nInf+nCav+nArc;
-  if(total<=0) return {finalScore:0,byType:{inf:0,cav:0,arc:0},round10Total:0};
-
-  const armyMin=Math.min(total, BEAR_TROOPS);
-
-  const atkInf=perTroopAttack(t.inf[0]);
-  const atkCav=perTroopAttack(t.cav[0]);
-  const atkArc=perTroopAttack(t.arc[0]);
-
-  const dInf=Math.sqrt(nInf*armyMin)*(atkInf/BEAR_DEF_PER_TROOP)/100*SKILLMOD_INF;
-  const dCav=Math.sqrt(nCav*armyMin)*(atkCav/BEAR_DEF_PER_TROOP)/100*SKILLMOD_CAV;
-  const dArc=Math.sqrt(nArc*armyMin)*(atkArc/BEAR_DEF_PER_TROOP)/100*SKILLMOD_ARC;
-
-  const total0=dInf+dCav+dArc;
-  const total10=total0*10;
-
-  return {
-    byType:{inf:dInf,cav:dCav,arc:dArc},
-    round10Total:total10,
-    finalScore:Math.ceil(total10)
-  };
-}
-
-/* ============================================================
-   SECTION 3 — MAGIC RATIO V2 ENGINE
+   MAGIC RATIO V2
    ============================================================ */
 function coeffsByTier(tierKey){
-  const t=TIERS?.tiers?.[tierKey];
+  const t = TIERS?.tiers?.[tierKey];
   if(!t) return {inf:1,cav:1,arc:1};
   return {
     inf: perTroopAttack(t.inf[0])/BEAR_DEF_PER_TROOP/100*SKILLMOD_INF,
@@ -165,8 +200,8 @@ function coeffsByTier(tierKey){
 }
 
 function magicWeightsSquared(tierKey, mode){
-  const K=coeffsByTier(tierKey);
-  const mult=(mode==="magic12" ? {inf:1,cav:1,arc:2}:{inf:1,cav:1,arc:1});
+  const K = coeffsByTier(tierKey);
+  const mult = mode==="magic12" ? {inf:1,cav:1,arc:2}:{inf:1,cav:1,arc:1};
   return {
     wInf:(K.inf*mult.inf)**2,
     wCav:(K.cav*mult.cav)**2,
@@ -174,61 +209,61 @@ function magicWeightsSquared(tierKey, mode){
   };
 }
 
-/* Co-optimize call + joins */
 function planMagicAlloc(mode, stockIn, rallySize, X, cap, tierKey){
-  const s=cloneStock(stockIn);
-  const R=Math.max(0,rallySize|0);
-  const C=Math.max(0,cap|0);
-  const Xn=Math.max(0,X|0);
-  const T=R + Xn*C;
+  const s = cloneStock(stockIn);
+  const R = rallySize|0;
+  const C = cap|0;
+  const Xn = X|0;
+  const T = R + Xn*C;
 
-  const {wInf,wCav,wArc}=magicWeightsSquared(tierKey,mode);
-  const sw=Math.max(1e-9, wInf+wCav+wArc);
+  const {wInf,wCav,wArc} = magicWeightsSquared(tierKey, mode);
+  const sw = Math.max(1e-9, wInf+wCav+wArc);
 
-  const base={
-    inf:T*(wInf/sw),
-    cav:T*(wCav/sw),
-    arc:T*(wArc/sw)
+  const base = {
+    inf: T*(wInf/sw),
+    cav: T*(wCav/sw),
+    arc: T*(wArc/sw)
   };
 
-  let target={
-    inf:Math.min(s.inf,Math.round(base.inf)),
-    cav:Math.min(s.cav,Math.round(base.cav)),
-    arc:Math.min(s.arc,Math.round(base.arc))
+  let target = {
+    inf: Math.min(s.inf, Math.round(base.inf)),
+    cav: Math.min(s.cav, Math.round(base.cav)),
+    arc: Math.min(s.arc, Math.round(base.arc))
   };
 
-  let used=target.inf+target.cav+target.arc;
-  let deficit=T-used;
-  const pr=[["arc",wArc],["cav",wCav],["inf",wInf]].sort((a,b)=>b[1]-a[1]);
+  let used = target.inf + target.cav + target.arc;
+  let deficit = T - used;
 
-  while(deficit>0){
-    let ok=false;
+  const pr = [["arc",wArc],["cav",wCav],["inf",wInf]].sort((a,b)=>b[1]-a[1]);
+
+  while(deficit > 0){
+    let moved=false;
     for(const[k] of pr){
-      const free=s[k]-target[k];
+      const free = s[k] - target[k];
       if(free>0){
-        const give=Math.min(deficit,free);
+        const give = Math.min(free, deficit);
         target[k]+=give;
         deficit-=give;
-        ok=true;
+        moved=true;
         if(deficit<=0) break;
       }
     }
-    if(!ok) break;
+    if(!moved) break;
   }
 
-  const totalT=Math.max(1,target.inf+target.cav+target.arc);
-  const frac={i:target.inf/totalT,c:target.cav/totalT,a:target.arc/totalT};
+  const TT = Math.max(1, target.inf+target.cav+target.arc);
+  const frac = {i:target.inf/TT, c:target.cav/TT, a:target.arc/TT};
 
-  /* Call */
+  // Call
   const rally={
-    inf:Math.min(s.inf,Math.round(frac.i*R)),
-    cav:Math.min(s.cav,Math.round(frac.c*R)),
+    inf:Math.min(s.inf, Math.round(frac.i*R)),
+    cav:Math.min(s.cav, Math.round(frac.c*R)),
     arc:0
   };
-  rally.arc=Math.min(s.arc, R-rally.inf-rally.cav);
+  rally.arc = Math.min(s.arc, R-rally.inf-rally.cav);
   s.inf-=rally.inf; s.cav-=rally.cav; s.arc-=rally.arc;
 
-  /* Joins */
+  // Joins
   const joins=[];
   for(let i=0;i<Xn;i++){
     const m={
@@ -236,7 +271,7 @@ function planMagicAlloc(mode, stockIn, rallySize, X, cap, tierKey){
       cav:Math.min(s.cav,Math.round(frac.c*C)),
       arc:0
     };
-    m.arc=Math.min(s.arc, C-(m.inf+m.cav));
+    m.arc = Math.min(s.arc, C-(m.inf+m.cav));
     s.inf-=m.inf; s.cav-=m.cav; s.arc-=m.arc;
     joins.push(m);
   }
@@ -245,95 +280,73 @@ function planMagicAlloc(mode, stockIn, rallySize, X, cap, tierKey){
 }
 
 /* ============================================================
-   SECTION 4 — RECOMMEND MARCH COUNT (unchanged)
+   Recommend march count
    ============================================================ */
-function meetsTargetFill(f){return f>=FILL_THRESHOLD;}
+function meetsTargetFill(f){ return f>=FILL_THRESHOLD; }
 
-function evaluateMarchSet(packs,cap){
-  const totals=packs.map(p=>sumTroops(p));
-  const fills=totals.map(t=>cap?t/cap:0);
-  const minFill=fills.length?Math.min(...fills):0;
-  const avgFill=fills.length?(fills.reduce((a,b)=>a+b,0)/fills.length):0;
-  const fullCount=fills.filter(f=>meetsTargetFill(f)).length;
-  return {minFill,avgFill,fullCount};
+function evaluateMarchSet(packs, cap){
+  const totals = packs.map(p=>sumTroops(p));
+  const fills = totals.map(t=>cap? t/cap : 0);
+
+  const minFill = fills.length? Math.min(...fills):0;
+  const avgFill = fills.length? fills.reduce((a,b)=>a+b,0)/fills.length : 0;
+  const fullCount = fills.filter(f=>meetsTargetFill(f)).length;
+
+  return {minFill, avgFill, fullCount};
 }
 
-function recommendMarchCount(mode,tierKey,rally,stockAfterCall,X,cap,map){
+function recommendMarchCount(mode, tierKey, rally, stockAfter, X, cap, manual){
   let best=null;
+
   for(let n=1;n<=X;n++){
-    const sim=buildJoinRallies(mode,stockAfterCall,n,cap,tierKey,map);
-    const m=evaluateMarchSet(sim.packs,cap);
-    const score=m.fullCount*1e9 + m.minFill*1e6 + m.avgFill*1e3 - sumTroops(sim.leftover);
-    const c={marchCount:n, score, metrics:m};
-    if(!best||score>best.score) best=c;
+    const sim = buildJoinRallies(mode, stockAfter, n, cap, tierKey, manual);
+    const m = evaluateMarchSet(sim.packs, cap);
+    const sc = m.fullCount*1e9 + m.minFill*1e6 + m.avgFill*1e3 - sumTroops(sim.leftover);
+
+    if(!best || sc>best.score){
+      best={marchCount:n, score:sc, metrics:m};
+    }
   }
   return best;
 }
 
 /* ============================================================
-   SECTION 5 — SIMPLE 1:1 BUILDER (fallback)
+   SIMPLE JOIN BUILDER
    ============================================================ */
-function buildCallRally(mode, stock, rallySize, tierKey, manual){
-  const s=cloneStock(stock);
-  if(rallySize<=0) return {rally:{inf:0,cav:0,arc:0}, stockAfter:s};
+function buildJoinRallies(mode, stockIn, X, cap, tierKey, manual=null){
+  const s=cloneStock(stockIn);
+  const W = manual? (manual.i+manual.c+manual.a):3;
+  const wi = manual? manual.i : 1;
+  const wc = manual? manual.c : 1;
+  const wa = manual? manual.a : 1;
 
-  let w = manual
-    ? {inf:manual.i, cav:manual.c, arc:manual.a}
-    : {inf:1, cav:1, arc:1};
-
-  const S = Math.max(1e-9, w.inf+w.cav+w.arc);
-  const t = rallySize;
-
-  let ideal = {
-    inf: Math.round(w.inf/S*t),
-    cav: Math.round(w.cav/S*t),
-    arc: t - Math.round(w.inf/S*t) - Math.round(w.cav/S*t)
-  };
-
-  const r={
-    inf:Math.min(s.inf,ideal.inf),
-    cav:Math.min(s.cav,ideal.cav),
-    arc:0
-  };
-  const rem=t-(r.inf+r.cav);
-  r.arc=Math.min(s.arc,rem);
-
-  s.inf-=r.inf; s.cav-=r.cav; s.arc-=r.arc;
-
-  return {rally:r, stockAfter:s};
-}
-
-function buildJoinRallies(mode, stock, X, cap, tierKey, manual=null){
-  const s=cloneStock(stock);
-  let w=manual
-    ? {inf:manual.i,cav:manual.c,arc:manual.a}
-    : {inf:1,cav:1,arc:1};
-
-  const S=Math.max(1e-9, w.inf+w.cav+w.arc);
   const packs=[];
 
   for(let i=0;i<X;i++){
-    let ti=Math.round(w.inf/S*cap);
-    let tc=Math.round(w.cav/S*cap);
-    let ta=cap-ti-tc;
+    const infT = Math.round(wi/W*cap);
+    const cavT = Math.round(wc/W*cap);
+    const arcT = cap-infT-cavT;
 
     const p={
-      inf:Math.min(s.inf,ti),
-      cav:Math.min(s.cav,tc),
-      arc:0
+      inf: Math.min(s.inf, infT),
+      cav: Math.min(s.cav, cavT),
+      arc: 0
     };
-    p.arc=Math.min(s.arc,cap-(p.inf+p.cav));
+    const rem = cap-(p.inf+p.cav);
+    p.arc = Math.min(s.arc, rem);
+
     s.inf-=p.inf; s.cav-=p.cav; s.arc-=p.arc;
     packs.push(p);
   }
+
   return {packs, leftover:s};
 }
 
 /* ============================================================
-   SECTION 6 — RENDERING
+   RENDERING
    ============================================================ */
 function renderCallTable(r){
-  $("callRallyTable").innerHTML=`
+  $("callRallyTable").innerHTML = `
     <table>
       <thead><tr><th>Type</th><th>Inf</th><th>Cav</th><th>Arc</th><th>Total</th></tr></thead>
       <tbody>
@@ -349,14 +362,14 @@ function renderCallTable(r){
   `;
 }
 
-function renderJoinTable(packs){
-  let html=`
+function renderJoinTable(joins){
+  let out=`
     <table>
       <thead><tr><th>#</th><th>Inf</th><th>Cav</th><th>Arc</th><th>Total</th></tr></thead>
       <tbody>
   `;
-  packs.forEach((p,i)=>{
-    html+=`
+  joins.forEach((p,i)=>{
+    out+=`
       <tr>
         <td>#${i+1}</td>
         <td>${p.inf}</td>
@@ -365,66 +378,70 @@ function renderJoinTable(packs){
         <td>${sumTroops(p)}</td>
       </tr>`;
   });
-  html+=`</tbody></table>`;
-  $("joinTableWrap").innerHTML=html;
+  out += "</tbody></table>";
+  $("joinTableWrap").innerHTML = out;
 }
 
-function renderScoreboardCompact(callPack, joinPacks, tierKey){
-  const callScore=computeFormationDamage(callPack,tierKey).finalScore;
+function renderScoreboardCompact(rally, joins, tierKey){
+  const callScore = computeFormationDamage(rally, tierKey).finalScore;
   let joinScore=0;
-  for(const p of joinPacks) joinScore+=computeFormationDamage(p,tierKey).finalScore;
+  for(const p of joins){
+    joinScore += computeFormationDamage(p, tierKey).finalScore;
+  }
 
-  let html=`
+  let out = `
     <table>
       <thead><tr><th>Window</th><th>Call</th><th>Joins</th><th>Total</th></tr></thead>
       <tbody>
   `;
-  for(let w=1;w<=WINDOWS;w++){
-    html+=`
+  for(let w=1; w<=WINDOWS; w++){
+    out+=`
       <tr>
         <td>${w}</td>
         <td>${callScore}</td>
         <td>${joinScore}</td>
         <td>${callScore+joinScore}</td>
-      </tr>
-    `;
+      </tr>`;
   }
-  html+=`</tbody></table>`;
-  $("scoreboardTableWrap").innerHTML=html;
+  out+="</tbody></table>";
+  $("scoreboardTableWrap").innerHTML = out;
 }
 
 /* ============================================================
-   SECTION 7 — MAIN COMPUTE
+   MAIN COMPUTE
    ============================================================ */
 function compute(mode){
-  const tierKey=$("troopTier").value;
-  const t=TIERS?.tiers?.[tierKey];
+  const tierKey = $("troopTier").value;
+  const tier = TIERS?.tiers?.[tierKey];
 
   $("selectedTierNote").textContent =
-    t ? `Using tier ${tierKey} — Base ATK Inf/Cav/Arc = ${t.inf[0]}/${t.cav[0]}/${t.arc[0]}` : "";
+    tier ? `Using tier ${tierKey} — Base ATK ${tier.inf[0]}/${tier.cav[0]}/${tier.arc[0]}` : "";
 
-  const stock0={
+  const stock0 = {
     inf:nval("stockInf"),
     cav:nval("stockCav"),
     arc:nval("stockArc")
   };
 
   const rallySize = nval("rallySize");
-  const joinCap   = nval("marchSize");
-  const X         = nval("numFormations");
+  const joinCap = nval("marchSize");
+  const X = nval("numFormations");
 
-  const parsed=parseTriplet($("compInput").value);
-  const manual=parsed ? {i:parsed.i,c:parsed.c,a:parsed.a} : null;
+  const parsed = parseTriplet($("compInput").value);
+  const manual = parsed? parsed : null;
 
   let rally, joins, leftover, fractions;
 
+  /* ---- MAGIC RATIO ---- */
   if(mode==="magic12"){
-    ({rally,packs:joins,leftover,fractions} =
-      planMagicAlloc(mode,stock0,rallySize,X,joinCap,tierKey));
+    ({rally, packs:joins, leftover, fractions} =
+      planMagicAlloc(mode, stock0, rallySize, X, joinCap, tierKey));
+  }
 
-  } else {
-    // 1:1 MODE — USE ORIGINAL OPTIMAL FRACTIONS
-    const stats={
+  /* ---- 1:1 RATIO (RESTORED) ---- */
+  else {
+    // Load user stats
+    let stats = {
       inf_atk:nval("inf_atk"),
       inf_let:nval("inf_let"),
       cav_atk:nval("cav_atk"),
@@ -433,34 +450,45 @@ function compute(mode){
       arc_let:nval("arc_let")
     };
 
-    const opt=computeExactOptimalFractions(stats,tierKey);
-    const bounded=enforceOriginalBounds(opt);
-    if (!isFinite(useFrac.i) || !isFinite(useFrac.c) || !isFinite(useFrac.a)) {
-      useFrac = { i:0.08, c:0.12, a:0.80 };
+    // Ensure stats always nonzero
+    ["inf_atk","inf_let","cav_atk","cav_let","arc_atk","arc_let"].forEach(id=>{
+      if (!Number.isFinite(stats[id]) || stats[id] <= 0){
+        stats[id] = 1; // safe minimum
+      }
+    });
+
+    let opt = computeExactOptimalFractions(stats, tierKey);
+    opt = enforceBounds(opt);
+
+    if(!isFinite(opt.fi) || !isFinite(opt.fc) || !isFinite(opt.fa)){
+      opt = {fi:0.08, fc:0.12, fa:0.80};
     }
-    // override if user typed
-    const useFrac = manual ? manual : bounded;
 
-    // Build call
-    const cr=buildCallRally("ratio11",stock0,rallySize,tierKey,useFrac);
-    rally=cr.rally;
+    const useFrac = manual ? manual : opt;
 
-    // Build joins
-    const jr=buildJoinRallies("ratio11",cr.stockAfter,X,joinCap,tierKey,useFrac);
-    joins=jr.packs;
-    leftover=jr.leftover;
+    // Call
+    const cr = buildCallRally("ratio11", stock0, rallySize, tierKey, useFrac);
+    rally = cr.rally;
+
+    // Joins
+    const jr = buildJoinRallies("ratio11", cr.stockAfter, X, joinCap, tierKey, useFrac);
+    joins = jr.packs;
+    leftover = jr.leftover;
 
     fractions = useFrac;
   }
 
-  const best=recommendMarchCount(mode,tierKey,rally,cloneStock(stock0),X,joinCap,manual);
-  window.__recommendedMarches=best?.marchCount || X;
+  /* ---- Recommendation ---- */
+  const best = recommendMarchCount(mode, tierKey, rally, cloneStock(stock0), X, joinCap, manual);
+  window.__recommendedMarches = best?.marchCount || X;
 
   $("recommendedDisplay").textContent =
     `Best: ${window.__recommendedMarches} marches (min ${(best.metrics.minFill*100).toFixed(1)}%, avg ${(best.metrics.avgFill*100).toFixed(1)}%)`;
 
+  /* ---- Rendering ---- */
   renderCallTable(rally);
   renderJoinTable(joins);
+
   $("fractionReadout").textContent = `Using: ${toPctTriplet(fractions)} (Inf/Cav/Arc)`;
 
   const formed = joins.reduce((s,p)=>s+sumTroops(p),0);
@@ -468,22 +496,22 @@ function compute(mode){
   const used   = sumTroops(rally)+formed;
 
   $("inventoryReadout").textContent =
-  `Rally ${sumTroops(rally)} used → INF ${rally.inf}, CAV ${rally.cav}, ARC ${rally.arc}.
+`Rally ${sumTroops(rally)} used → INF ${rally.inf}, CAV ${rally.cav}, ARC ${rally.arc}.
 
-  Formations built: ${joins.length} × ${joinCap} → ${formed} troops.
+Formations built: ${joins.length} × ${joinCap} → ${formed} troops.
 
-  Leftover → INF ${leftover.inf}, CAV ${leftover.cav}, ARC ${leftover.arc}.
+Leftover → INF ${leftover.inf}, CAV ${leftover.cav}, ARC ${leftover.arc}.
 
-  Stock used: ${used} / ${before}.`;
+Stock used: ${used} / ${before}.`;
 
-    renderScoreboardCompact(rally,joins,tierKey);
+  renderScoreboardCompact(rally, joins, tierKey);
 
-    $("hiddenLastMode").value=mode;
-    $("hiddenBestFractions").value=toPctTriplet(fractions);
-  }
+  $("hiddenLastMode").value = mode;
+  $("hiddenBestFractions").value = toPctTriplet(fractions);
+}
 
 /* ============================================================
-   SECTION 8 — EVENT WIRING
+   UI WIRING
    ============================================================ */
 function wire(){
   $("btnRatio11").addEventListener("click",()=>compute("ratio11"));
@@ -494,7 +522,7 @@ function wire(){
 
   $("btnUseRecommended").addEventListener("click",()=>{
     if(window.__recommendedMarches){
-      $("numFormations").value=window.__recommendedMarches;
+      $("numFormations").value = window.__recommendedMarches;
       compute($("hiddenLastMode").value || "ratio11");
     }
   });
@@ -506,8 +534,7 @@ function wire(){
   $("compInput").addEventListener("input",()=>{
     const p=parseTriplet($("compInput").value);
     $("compHint").textContent =
-      p ? `Manual override: ${toPctTriplet(p)}`
-        : `Invalid or empty → auto fractions`;
+      p ? `Manual override: ${toPctTriplet(p)}` : `Invalid or empty → auto fractions`;
   });
 }
 
@@ -516,14 +543,14 @@ function wire(){
    ============================================================ */
 async function init(){
   try{
-    const r=await fetch("tiers.json");
-    TIERS=await r.json();
+    const r = await fetch("tiers.json");
+    TIERS = await r.json();
   } catch(e){
-    console.error("tiers.json failed",e);
-    TIERS={tiers:{}};
+    console.error("tiers.json failed", e);
+    TIERS = {tiers:{}};
   }
   wire();
   compute("ratio11");
 }
 
-window.addEventListener("DOMContentLoaded",init);
+window.addEventListener("DOMContentLoaded", init);
