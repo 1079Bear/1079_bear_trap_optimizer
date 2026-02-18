@@ -5,9 +5,6 @@
   <title>#1079 LoL App – Kingshot Bear Optimizer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- Plotly (correct tag) -->
-  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
-
   <style>
     :root{
       --bg:#0f1116;
@@ -18,6 +15,8 @@
       --accent-2:#2563eb;
       --field:#222831;
       --border:#2d3340;
+      --ok:#198754;
+      --ok-hover:#157347;
     }
     *{ box-sizing:border-box; }
     body{
@@ -26,7 +25,9 @@
     }
     header{ padding:24px 16px }
     h1{ margin:0 0 16px }
-    .container{ max-width:1100px; margin:auto; padding:0 16px 24px }
+    h2{ margin:0 0 12px }
+    h3{ margin:0 0 10px }
+    .container{ max-width:1200px; margin:auto; padding:0 16px 24px }
     .panel{
       background:var(--panel); border-radius:12px; padding:20px; margin-bottom:18px;
       border:1px solid var(--border); box-shadow:0 2px 12px rgba(0,0,0,.35);
@@ -37,45 +38,43 @@
     }
     input:focus,select:focus{ border-color:var(--accent); box-shadow:0 0 0 2px #3b82f644 }
     .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:20px; }
-    .stock-grid{ gap:28px; } /* extra spacing between troop stock inputs */
-    button{
-      width:100%; padding:14px; margin-top:14px; background:var(--accent);
-      border:0; border-radius:8px; color:white; font-size:1rem; cursor:pointer;
+    .two-col { display:grid; grid-template-columns: 1fr 380px; gap: 18px; align-items:start; }
+    @media (max-width: 1020px){
+      .two-col { grid-template-columns: 1fr; }
     }
-    button:hover{ background:var(--accent-2) }
-    /* small inline buttons */
-    .inline-btn{
-      width:auto; padding:10px 12px; margin-top:0;
-    }
-    #ternaryPlot{ width:100%; height:650px }
+    .inputs-sticky { position: sticky; top: 16px; }
+
     .muted{ color:var(--muted) }
+    .pill{ display:inline-block; padding:2px 8px; background:#0f172a; border:1px solid #334155; border-radius:999px; font-size:.9rem; }
+
+    .btn{
+      padding:12px 14px; background:var(--accent); border:0; border-radius:8px; color:white; font-size:1rem; cursor:pointer;
+      width:100%;
+    }
+    .btn:hover{ background:var(--accent-2) }
+    .btn-ok{ background:var(--ok); }
+    .btn-ok:hover{ background:var(--ok-hover); }
+    .btn-row{ display:flex; gap:10px; flex-wrap:wrap; }
+
     table{ width:100%; border-collapse:collapse; margin-top:12px; background:#171b22; border-radius:8px; overflow:hidden; }
     th, td{ padding:10px 12px; border-bottom:1px solid #272d3a; text-align:right; }
     th:first-child, td:first-child{ text-align:left; }
     tr:last-child td{ border-bottom:0; }
-    .pill{ display:inline-block; padding:2px 8px; background:#0f172a; border:1px solid #334155; border-radius:999px; font-size:.9rem; }
-    /* Improve inventory text alignment */
-    #inventoryReadout { white-space: pre-line; }  
+
     .recommended-box {
-        box-shadow: 0 2px 8px rgba(0,0,0,.25);
+      margin-top:12px; padding:12px; background:#131821; border:1px solid #2d3340; border-radius:8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
     }
-    .btn-green {
-        background-color: #198754;
-    }
+    .inline-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
 
-    .btn-green:hover {
-        background-color: #157347;
-    }
-    /* Pulse animation for Use Recommended button */
     @keyframes pulseGreen {
-        0%   { box-shadow: 0 0 0px rgba(16,185,129, 0.0); }
-        50%  { box-shadow: 0 0 14px rgba(16,185,129, 0.8); }
-        100% { box-shadow: 0 0 0px rgba(16,185,129, 0.0); }
+      0%   { box-shadow: 0 0 0px rgba(16,185,129, 0.0); }
+      50%  { box-shadow: 0 0 14px rgba(16,185,129, 0.8); }
+      100% { box-shadow: 0 0 0px rgba(16,185,129, 0.0); }
     }
+    .pulse-recommended { animation: pulseGreen 1.4s ease-in-out 0s 30; }
 
-    .pulse-recommended {
-        animation: pulseGreen 1.4s ease-in-out 0s 30; /* pulses twice */
-    }
+    #inventoryReadout { white-space: pre-line; }
   </style>
 </head>
 <body>
@@ -86,121 +85,148 @@
 
 <main class="container">
 
-  <!-- ===== Stats + Tier ===== -->
-  <section class="panel">
-    <h2>Troop Stats Input</h2>
+  <!-- MAIN LAYOUT -->
+  <section class="two-col">
 
-    <div class="grid">
-      <div>
-        <h3>Infantry</h3>
-        <label>Attack (%)</label>
-        <input id="inf_atk" type="number" step="0.1" value="481.6">
-        <label>Lethality (%)</label>
-        <input id="inf_let" type="number" step="0.1" value="284.4">
-      </div>
-
-      <div>
-        <h3>Cavalry</h3>
-        <label>Attack (%)</label>
-        <input id="cav_atk" type="number" step="0.1" value="493.1">
-        <label>Lethality (%)</label>
-        <input id="cav_let" type="number" step="0.1" value="311.8">
-      </div>
-
-      <div>
-        <h3>Archery</h3>
-        <label>Attack (%)</label>
-        <input id="arc_atk" type="number" step="0.1" value="508.8">
-        <label>Lethality (%)</label>
-        <input id="arc_let" type="number" step="0.1" value="479.7">
-      </div>
-    </div>
-
-    <label for="troopTier">Troop tier</label>
-    <select id="troopTier">
-      <option value="T1–T6">T1–T6</option>
-      <option value="T7–TG2" selected>T7–TG2</option>
-      <option value="TG3–TG4">TG3–TG4</option>
-    </select>
-
-    <button id="btnPlot">Create plot chart!</button>
-    <div class="muted" style="margin-top:6px">Best point uses the exact closed‑form solution.</div>
-  </section>
-
-  <!-- ===== Plot ===== -->
-  <section class="panel">
-    <div id="ternaryPlot"></div>
-    <div id="bestReadout" class="muted" style="margin-top:10px"></div>
-  </section>
-
-  <!-- ===== Multi-formation Optimizer (Option A) ===== -->
-  <section class="panel">
-    <h2>Call / Join Rally ‑ Formation Optimizer</h2>
-
-    <!-- NEW: Editable composition field used for rally -->
-    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:6px 0 12px">
-      <div style="min-width:240px; flex:1 0 240px">
-        <label for="compInput">Composition to use for Rally (Inf/Cav/Arc)</label>
-        <input id="compInput" type="text" inputmode="numeric" placeholder="Inf/Cav/Arc e.g. 4/10/85">
-      </div>
-      <div>
-        <label style="visibility:hidden">.</label>
-        <button id="btnUseBest" class="inline-btn btn-green">🔥Use Best</button>
-      </div>
-      <div class="muted" id="compHint" style="min-height:1em"></div>
-    </div>
-
-    <div class="grid stock-grid">
-      <div>
-        <h3>Your available troops</h3>
-        <label>Infantry available</label>
-        <input id="stockInf" type="number" step="1" min="0" value="202566">
-        <label>Cavalry available</label>
-        <input id="stockCav" type="number" step="1" min="0" value="183536">
-        <label>Archers available</label>
-        <input id="stockArc" type="number" step="1" min="0" value="304719">
-      </div>
-
-      <div>
-        <h3>Formation settings</h3>
-        <label>Call rally size</label>
-        <input id="rallySize" type="number" step="1" min="0" value="134850">
-        <label>Join size limit</label>
-        <input id="marchSize" type="number" step="1" min="1000" value="65000">
-        <label># of marches you have</label>
-        <input id="numFormations" type="number" step="1" min="1" value="6">
-
-        <div class="recommended-box" style="margin-top:12px; padding:12px; background:#131821; border:1px solid #2d3340; border-radius:8px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <div style="font-weight:600; font-size:1rem;">Recommended marches</div>
-                    <div id="recommendedDisplay" class="muted" style="margin-top:4px;">…</div>
-                </div>
-                <button id="btnUseRecommended" class="inline-btn btn-green" style="white-space:nowrap;">🔥Use Recommended</button>
-            </div>
+    <!-- LEFT: RESULTS & SCOREBOARD -->
+    <div>
+      <!-- Overview -->
+      <section class="panel">
+        <div class="inline-row">
+          <div class="pill">Score simulator</div>
+          <div id="selectedTierNote" class="muted"></div>
         </div>
 
-        <button id="btnOptimize" style="margin-top:18px;">Optimize split</button>
-      </div>
+        <div id="scoreSummary" class="muted" style="margin-top:8px">
+          Select tier, enter stats & troops, then press <strong>1:1 Ratio</strong> or <strong>1:2 Magic Ratio</strong>.
+        </div>
+
+        <div class="recommended-box">
+          <div class="inline-row">
+            <div>
+              <div style="font-weight:600">Recommended marches</div>
+              <div id="recommendedDisplay" class="muted" style="margin-top:4px">…</div>
+            </div>
+            <button id="btnUseRecommended" class="btn btn-ok" style="width:auto">🔥 Use Recommended</button>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:14px">
+          <div>
+            <div class="pill">Recommended Call Rally</div>
+            <div id="fractionReadout" class="muted" style="margin-top:8px"></div>
+          </div>
+          <div>
+            <div class="pill">Inventory result</div>
+            <div id="inventoryReadout" class="muted" style="margin-top:8px"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCOREBOARD -->
+      <section class="panel">
+        <h2>Scoreboard</h2>
+        <div class="muted" style="margin-bottom:8px">
+          Base dmg per type → 10 rounds → Final Score (ceiling)
+        </div>
+        <div id="scoreboardTableWrap"></div>
+      </section>
+
+      <!-- COMPOSITIONS -->
+      <section class="panel">
+        <h2>Compositions</h2>
+
+        <div class="pill">Call rally</div>
+        <div id="callRallyTable" style="margin-top:10px"></div>
+
+        <div class="pill" style="margin-top:18px">Join rallies</div>
+        <div id="joinTableWrap" style="margin-top:10px"></div>
+      </section>
     </div>
 
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:14px">
-      <div>
-        <div class="pill">Recommended Call Rally</div>
-        <div id="fractionReadout" class="muted" style="margin-top:8px"></div>
-      </div>
-      <div>
-        <div class="pill">Inventory result</div>
-        <div id="inventoryReadout" class="muted" style="margin-top:8px"></div>
-      </div>
-    </div>
+    <!-- RIGHT SIDE: INPUTS + BUTTONS -->
+    <div class="inputs-sticky">
+      <section class="panel">
+        <h2>Inputs</h2>
 
-    <div id="optTableWrap" style="margin-top:10px"></div>
+        <label>Troop tier</label>
+        <select id="troopTier">
+          <option value="T6" selected>T6</option>
+          <option value="T9">T9</option>
+          <option value="T10">T10</option>
+          <option value="T10.TG1">T10.TG1</option>
+          <option value="T10.TG2">T10.TG2</option>
+          <option value="T10.TG3">T10.TG3</option>
+          <option value="T10.TG4">T10.TG4</option>
+          <option value="T10.TG5">T10.TG5</option>
+        </select>
+
+        <div class="grid" style="margin-top:8px">
+          <div>
+            <h3>Infantry</h3>
+            <label>Attack (%)</label>
+            <input id="inf_atk" type="number" step="0.1" value="481.6">
+            <label>Lethality (%)</label>
+            <input id="inf_let" type="number" step="0.1" value="284.4">
+          </div>
+
+          <div>
+            <h3>Cavalry</h3>
+            <label>Attack (%)</label>
+            <input id="cav_atk" type="number" step="0.1" value="493.1">
+            <label>Lethality (%)</label>
+            <input id="cav_let" type="number" step="0.1" value="311.8">
+          </div>
+
+          <div>
+            <h3>Archery</h3>
+            <label>Attack (%)</label>
+            <input id="arc_atk" type="number" step="0.1" value="508.8">
+            <label>Lethality (%)</label>
+            <input id="arc_let" type="number" step="0.1" value="479.7">
+          </div>
+        </div>
+
+        <h3>Your available troops</h3>
+        <label>Infantry</label>
+        <input id="stockInf" type="number" min="0" value="200653">
+
+        <label>Cavalry</label>
+        <input id="stockCav" type="number" min="0" value="180269">
+
+        <label>Archers</label>
+        <input id="stockArc" type="number" min="0" value="301619">
+
+        <h3>Formation settings</h3>
+        <label>Call rally size</label>
+        <input id="rallySize" type="number" min="0" value="134850">
+
+        <label>Join cap</label>
+        <input id="marchSize" type="number" min="0" value="65000">
+
+        <label># of marches you have</label>
+        <input id="numFormations" type="number" min="1" value="6">
+
+        <label>Manual Call Rally composition (Inf/Cav/Arc)</label>
+        <input id="compInput" type="text" placeholder="e.g. 5/15/80">
+
+        <div id="compHint" class="muted" style="margin-top:6px"></div>
+
+        <div class="btn-row" style="margin-top:14px">
+          <button id="btnRatio11" class="btn">1:1 Ratio</button>
+          <button id="btnMagic12" class="btn btn-ok">1:2 Magic Ratio</button>
+        </div>
+
+        <button id="btnRecompute" class="btn" style="margin-top:10px">Recalculate</button>
+
+        <input id="hiddenLastMode" type="hidden" value="ratio11">
+        <input id="hiddenBestFractions" type="hidden" value="">
+      </section>
+    </div>
   </section>
 
 </main>
 
-<!-- App logic -->
 <script src="app.js"></script>
 </body>
 </html>
