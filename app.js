@@ -1,3 +1,5 @@
+NOVO APP
+
 /* ============================================================
    #1079 LoL App – Kingshot Bear Optimizer
    FINAL CLEAN app.js (PART 1/4)
@@ -327,6 +329,90 @@ function recommendMarchCount(mode, tierKey, rally, stockAfterCall, X, cap, manua
   }
   return best;
 }
+
+function buildOptionAFormations(stock, formations, cap) {
+  const n = Math.max(1, formations);
+
+  const infMinPer = Math.ceil(INF_MIN_PCT * cap);
+  const infMaxPer = Math.floor(INF_MAX_PCT * cap);
+  const cavMinPer = Math.ceil(CAV_MIN_PCT * cap);
+
+  const infAlloc = Array(n).fill(0);
+  const cavAlloc = Array(n).fill(0);
+  const arcAlloc = Array(n).fill(0);
+
+  // Step 1: Give INF min fraction to each march
+  for (let i = 0; i < n; i++) {
+    let free = cap;
+
+    if (free > 0) {
+      const giveInf = Math.min(infMinPer, stock.inf, free);
+      infAlloc[i] += giveInf;
+      stock.inf -= giveInf;
+      free -= giveInf;
+    }
+
+    if (free > 0) {
+      const giveCav = Math.min(cavMinPer, stock.cav, free);
+      cavAlloc[i] += giveCav;
+      stock.cav -= giveCav;
+    }
+  }
+
+  // Step 2: Fill ARC
+  const arcCaps = Array(n).fill(0).map((_,i)=> Math.max(0, cap - infAlloc[i] - cavAlloc[i]));
+  const arcGive = fillRoundRobin(stock.arc, arcCaps);
+  for (let i = 0; i < n; i++) {
+    arcAlloc[i] += arcGive[i];
+    stock.arc -= arcGive[i];
+  }
+
+  // Step 3: Fill remaining CAV
+  const cavCaps = Array(n).fill(0).map((_,i)=>
+    Math.max(0, cap - infAlloc[i] - cavAlloc[i] - arcAlloc[i])
+  );
+  const cavGive = fillRoundRobin(stock.cav, cavCaps);
+  for (let i = 0; i < n; i++) {
+    cavAlloc[i] += cavGive[i];
+    stock.cav -= cavGive[i];
+  }
+
+  // Step 4: Fill remaining INF (max cap)
+  const infCaps = Array(n).fill(0).map((_,i)=>{
+    const free = Math.max(0, cap - infAlloc[i] - cavAlloc[i] - arcAlloc[i]);
+    const room = Math.max(0, infMaxPer - infAlloc[i]);
+    return Math.min(free, room);
+  });
+  const infGive = fillRoundRobin(stock.inf, infCaps);
+  for (let i = 0; i < n; i++) {
+    infAlloc[i] += infGive[i];
+    stock.inf -= infGive[i];
+  }
+
+  const packs = [];
+  for (let i = 0; i < n; i++) {
+    packs.push({ inf:infAlloc[i], cav:cavAlloc[i], arc:arcAlloc[i] });
+  }
+
+  return { packs, leftover: stock };
+}
+function fillRoundRobin(total, caps) {
+  const out = Array(caps.length).fill(0);
+  let t = Math.floor(total);
+  let progress = true;
+
+  while (t > 0 && progress) {
+    progress = false;
+    for (let i = 0; i < caps.length && t > 0; i++) {
+      if (out[i] < caps[i]) {
+        out[i]++;
+        t--;
+        progress = true;
+      }
+    }
+  }
+  return out;
+}
 /* ============================================================
    RENDERING FUNCTIONS
    ============================================================ */
@@ -481,7 +567,10 @@ const useFrac = manual ? manual : frac;
 
 // Build call rally + joins using {i,c,a}
 const cr = buildCallRally("ratio11", stock0, rallySize, tierKey, useFrac);
-const jr = buildJoinRallies("ratio11", cr.stockAfter, X, joinCap, tierKey, useFrac);
+
+const jr = buildOptionAFormations(cloneStock(cr.stockAfter), X, joinCap);
+joins = jr.packs;
+leftover = jr.leftover;
 
 rally = cr.rally;
 joins = jr.packs;
