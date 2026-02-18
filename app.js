@@ -451,41 +451,44 @@ function compute(mode){
   }
 
   else {
-    /* ------ 1:1 RESTORED MODE ------ */
-    let stats = {
-      inf_atk:nval("inf_atk"),
-      inf_let:nval("inf_let"),
-      cav_atk:nval("cav_atk"),
-      cav_let:nval("cav_let"),
-      arc_atk:nval("arc_atk"),
-      arc_let:nval("arc_let")
-    };
+/* ------ 1:1 RESTORED MODE ------ */
+let stats = {
+  inf_atk:nval("inf_atk"),
+  inf_let:nval("inf_let"),
+  cav_atk:nval("cav_atk"),
+  cav_let:nval("cav_let"),
+  arc_atk:nval("arc_atk"),
+  arc_let:nval("arc_let")
+};
 
-    // Safe minimums
-    for(const k of ["inf_atk","inf_let","cav_atk","cav_let","arc_atk","arc_let"]){
-      if(!Number.isFinite(stats[k]) || stats[k] <= 0) stats[k] = 1;
-    }
+// Safe minimums so we never get 0 or NaN
+for (const k of ["inf_atk","inf_let","cav_atk","cav_let","arc_atk","arc_let"]) {
+  if (!Number.isFinite(stats[k]) || stats[k] <= 0) stats[k] = 1;
+}
 
-    // Original optimizer
-    let opt = computeExactOptimalFractions(stats, tierKey);
-    opt = enforceBounds(opt);
+// Original optimizer → returns {fi,fc,fa}
+let opt = computeExactOptimalFractions(stats, tierKey);
+opt = enforceBounds(opt);
+if (!isFinite(opt.fi) || !isFinite(opt.fc) || !isFinite(opt.fa)) {
+  opt = { fi:0.08, fc:0.12, fa:0.80 };
+}
 
-    if(!isFinite(opt.fi) || !isFinite(opt.fc) || !isFinite(opt.fa)){
-      opt = { fi:0.08, fc:0.12, fa:0.80 };
-    }
+// 🔧 Map to the shape builders expect: {i,c,a}
+const frac = { i: opt.fi, c: opt.fc, a: opt.fa };
 
-    const useFrac = manual ? manual : opt;
+// If user typed a manual override (Inf/Cav/Arc), use it; else use the mapped fractions
+const useFrac = manual ? manual : frac;
 
-    // Build call rally
-    const cr = buildCallRally("ratio11", stock0, rallySize, tierKey, useFrac);
-    rally = cr.rally;
+// Build call rally + joins using {i,c,a}
+const cr = buildCallRally("ratio11", stock0, rallySize, tierKey, useFrac);
+const jr = buildJoinRallies("ratio11", cr.stockAfter, X, joinCap, tierKey, useFrac);
 
-    // Build joins
-    const jr = buildJoinRallies("ratio11", cr.stockAfter, X, joinCap, tierKey, useFrac);
-    joins = jr.packs;
-    leftover = jr.leftover;
+rally = cr.rally;
+joins = jr.packs;
+leftover = jr.leftover;
 
-    fractions = useFrac;
+// This is what we print in “Using: I/C/A”
+fractions = useFrac;
   }
 
   /* --- RECOMMENDATION SYSTEM --- */
@@ -588,7 +591,7 @@ function wire(){
         : `Invalid or empty → auto fractions`;
   });
 }
-
+$("hiddenLastMode").value = "magic12";
 /* ============================================================
    INIT
    ============================================================ */
@@ -601,7 +604,7 @@ async function init(){
     TIERS = { tiers:{} };
   }
   wire();
-  compute("ratio11");
+  compute("magic12");
 }
 
 window.addEventListener("DOMContentLoaded", init);
